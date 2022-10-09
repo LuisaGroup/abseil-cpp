@@ -48,7 +48,7 @@
 #include "absl/base/internal/per_thread_tls.h"
 #include "absl/base/optimization.h"
 #include "absl/profiling/internal/sample_recorder.h"
-#include "absl/synchronization/mutex.h"
+//#include "absl/synchronization/mutex.h"
 #include "absl/utility/utility.h"
 
 namespace absl {
@@ -67,8 +67,8 @@ struct HashtablezInfo : public profiling_internal::Sample<HashtablezInfo> {
 
   // Puts the object into a clean state, fills in the logically `const` members,
   // blocking for any readers that are currently sampling the object.
-  void PrepareForSampling(int64_t stride, size_t inline_element_size_value)
-      ABSL_EXCLUSIVE_LOCKS_REQUIRED(init_mu);
+  void PrepareForSampling(int64_t stride, size_t inline_element_size_value);
+      //ABSL_EXCLUSIVE_LOCKS_REQUIRED(init_mu);
 
   // These fields are mutated by the various Record* APIs and need to be
   // thread-safe.
@@ -89,7 +89,7 @@ struct HashtablezInfo : public profiling_internal::Sample<HashtablezInfo> {
   // which can read them only during `SampleRecorder::Iterate` which will hold
   // the lock.
   static constexpr int kMaxStackDepth = 64;
-  absl::Time create_time;
+  //absl::Time create_time;
   int32_t depth;
   void* stack[kMaxStackDepth];
   size_t inline_element_size;  // How big is the slot?
@@ -281,9 +281,9 @@ void SetHashtablezSampleParameter(int32_t rate);
 void SetHashtablezSampleParameterInternal(int32_t rate);
 
 // Sets a soft max for the number of samples that will be kept.
-size_t GetHashtablezMaxSamples();
-void SetHashtablezMaxSamples(size_t max);
-void SetHashtablezMaxSamplesInternal(size_t max);
+int32_t GetHashtablezMaxSamples();
+void SetHashtablezMaxSamples(int32_t max);
+void SetHashtablezMaxSamplesInternal(int32_t max);
 
 // Configuration override.
 // This allows process-wide sampling without depending on order of

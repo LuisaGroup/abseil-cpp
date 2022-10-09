@@ -50,11 +50,10 @@
 #include "absl/hash/internal/low_level_hash.h"
 #include "absl/meta/type_traits.h"
 #include "absl/numeric/int128.h"
-#include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "absl/types/variant.h"
 #include "absl/utility/utility.h"
-
+#include <string_view>
 namespace absl {
 ABSL_NAMESPACE_BEGIN
 
@@ -444,7 +443,7 @@ H AbslHashValue(H hash_state, T C::* ptr) {
     // On other platforms, we assume that pointers-to-members do not have
     // padding.
 #ifdef __cpp_lib_has_unique_object_representations
-    static_assert(std::has_unique_object_representations<T C::*>::value);
+    static_assert(std::has_unique_object_representations_v<T C::*>);
 #endif  // __cpp_lib_has_unique_object_representations
     return n;
 #endif
@@ -517,14 +516,14 @@ H AbslHashValue(H hash_state, const std::shared_ptr<T>& ptr) {
 //  - `absl::Cord`
 //  - `std::string` (and std::basic_string<char, std::char_traits<char>, A> for
 //      any allocator A)
-//  - `absl::string_view` and `std::string_view`
+//  - `std::string_view` and `std::string_view`
 //
 // For simplicity, we currently support only `char` strings. This support may
 // be broadened, if necessary, but with some caution - this overload would
 // misbehave in cases where the traits' `eq()` member isn't equivalent to `==`
 // on the underlying character type.
 template <typename H>
-H AbslHashValue(H hash_state, absl::string_view str) {
+H AbslHashValue(H hash_state, std::string_view str) {
   return H::combine(
       H::combine_contiguous(std::move(hash_state), str.data(), str.size()),
       str.size());

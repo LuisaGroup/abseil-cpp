@@ -173,7 +173,6 @@
 
 #include "absl/base/config.h"
 #include "absl/meta/type_traits.h"
-#include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "absl/utility/utility.h"
 
@@ -300,11 +299,15 @@ std::string TypeName() {
   demangled = abi::__cxa_demangle(typeid(T).name(), nullptr, nullptr, &status);
 #endif
   if (status == 0 && demangled != nullptr) {  // Demangling succeeded.
-    absl::StrAppend(&out, "<", demangled, ">");
+    out += "<";
+    out += demangled;
+    out += ">";
     free(demangled);
   } else {
 #if defined(__GXX_RTTI) || defined(_CPPRTTI)
-    absl::StrAppend(&out, "<", typeid(T).name(), ">");
+    out += "<";
+    out += typeid(T).name();
+    out += ">";
 #endif
   }
   return out;
@@ -648,17 +651,15 @@ class LayoutImpl<std::tuple<Elements...>, absl::index_sequence<SizeSeq...>,
     const size_t sizes[] = {SizeOf<ElementType<OffsetSeq>>::value...};
     const std::string types[] = {
         adl_barrier::TypeName<ElementType<OffsetSeq>>()...};
-    std::string res = absl::StrCat("@0", types[0], "(", sizes[0], ")");
-    for (size_t i = 0; i != NumOffsets - 1; ++i) {
-      absl::StrAppend(&res, "[", size_[i], "]; @", offsets[i + 1], types[i + 1],
-                      "(", sizes[i + 1], ")");
-    }
+    std::string res;
+    res += "@0";
+    res += types[0];
+    res += "(";
+    res += sizes[0];
+    res += ")";
     // NumSizes is a constant that may be zero. Some compilers cannot see that
     // inside the if statement "size_[NumSizes - 1]" must be valid.
     int last = static_cast<int>(NumSizes) - 1;
-    if (NumTypes == NumSizes && last >= 0) {
-      absl::StrAppend(&res, "[", size_[last], "]");
-    }
     return res;
   }
 

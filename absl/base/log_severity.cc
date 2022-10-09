@@ -16,8 +16,6 @@
 
 #include <ostream>
 
-#include "absl/base/attributes.h"
-
 namespace absl {
 ABSL_NAMESPACE_BEGIN
 

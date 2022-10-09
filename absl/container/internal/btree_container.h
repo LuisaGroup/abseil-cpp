@@ -166,10 +166,9 @@ class btree_container {
 
   // Extract routines.
   node_type extract(iterator position) {
-    // Use Construct instead of Transfer because the rebalancing code will
-    // destroy the slot later.
-    auto node =
-        CommonAccess::Construct<node_type>(get_allocator(), position.slot());
+    // Use Move instead of Transfer, because the rebalancing code expects to
+    // have a valid object to scribble metadata bits on top of.
+    auto node = CommonAccess::Move<node_type>(get_allocator(), position.slot());
     erase(position);
     return node;
   }
@@ -292,11 +291,8 @@ class btree_set_container : public btree_container<Tree> {
   }
   template <typename... Args>
   std::pair<iterator, bool> emplace(Args &&... args) {
-    // Use a node handle to manage a temp slot.
-    auto node = CommonAccess::Construct<node_type>(this->get_allocator(),
-                                                   std::forward<Args>(args)...);
-    auto *slot = CommonAccess::GetSlot(node);
-    return this->tree_.insert_unique(params_type::key(slot), slot);
+    init_type v(std::forward<Args>(args)...);
+    return this->tree_.insert_unique(params_type::key(v), std::move(v));
   }
   iterator insert(const_iterator hint, const value_type &v) {
     return this->tree_
@@ -310,12 +306,9 @@ class btree_set_container : public btree_container<Tree> {
   }
   template <typename... Args>
   iterator emplace_hint(const_iterator hint, Args &&... args) {
-    // Use a node handle to manage a temp slot.
-    auto node = CommonAccess::Construct<node_type>(this->get_allocator(),
-                                                   std::forward<Args>(args)...);
-    auto *slot = CommonAccess::GetSlot(node);
+    init_type v(std::forward<Args>(args)...);
     return this->tree_
-        .insert_hint_unique(iterator(hint), params_type::key(slot), slot)
+        .insert_hint_unique(iterator(hint), params_type::key(v), std::move(v))
         .first;
   }
   template <typename InputIterator>
@@ -605,18 +598,12 @@ class btree_multiset_container : public btree_container<Tree> {
   }
   template <typename... Args>
   iterator emplace(Args &&... args) {
-    // Use a node handle to manage a temp slot.
-    auto node = CommonAccess::Construct<node_type>(this->get_allocator(),
-                                                   std::forward<Args>(args)...);
-    return this->tree_.insert_multi(CommonAccess::GetSlot(node));
+    return this->tree_.insert_multi(init_type(std::forward<Args>(args)...));
   }
   template <typename... Args>
   iterator emplace_hint(const_iterator hint, Args &&... args) {
-    // Use a node handle to manage a temp slot.
-    auto node = CommonAccess::Construct<node_type>(this->get_allocator(),
-                                                   std::forward<Args>(args)...);
-    return this->tree_.insert_hint_multi(iterator(hint),
-                                         CommonAccess::GetSlot(node));
+    return this->tree_.insert_hint_multi(
+        iterator(hint), init_type(std::forward<Args>(args)...));
   }
   iterator insert(node_type &&node) {
     if (!node) return this->end();

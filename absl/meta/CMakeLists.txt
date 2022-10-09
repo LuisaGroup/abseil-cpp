@@ -34,7 +34,6 @@ absl_cc_test(
   COPTS
     ${ABSL_TEST_COPTS}
   DEPS
-    absl::core_headers
     absl::type_traits
     GTest::gmock_main
 )

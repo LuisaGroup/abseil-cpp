@@ -14,14 +14,10 @@
 #ifndef ABSL_STATUS_INTERNAL_STATUS_INTERNAL_H_
 #define ABSL_STATUS_INTERNAL_STATUS_INTERNAL_H_
 
-#include <memory>
 #include <string>
-#include <utility>
 
 #include "absl/base/attributes.h"
 #include "absl/container/inlined_vector.h"
-#include "absl/strings/cord.h"
-
 #ifndef SWIG
 // Disabled for SWIG as it doesn't parse attributes correctly.
 namespace absl {
@@ -50,14 +46,13 @@ namespace status_internal {
 // Container for status payloads.
 struct Payload {
   std::string type_url;
-  absl::Cord payload;
 };
 
 using Payloads = absl::InlinedVector<Payload, 1>;
 
 // Reference-counted representation of Status data.
 struct StatusRep {
-  StatusRep(absl::StatusCode code_arg, absl::string_view message_arg,
+  StatusRep(absl::StatusCode code_arg, std::string_view message_arg,
             std::unique_ptr<status_internal::Payloads> payloads_arg)
       : ref(int32_t{1}),
         code(code_arg),
@@ -71,14 +66,6 @@ struct StatusRep {
 };
 
 absl::StatusCode MapToLocalCode(int value);
-
-// Returns a pointer to a newly-allocated string with the given `prefix`,
-// suitable for output as an error message in assertion/`CHECK()` failures.
-//
-// This is an internal implementation detail for Abseil logging.
-std::string* MakeCheckFailString(const absl::Status* status,
-                                 const char* prefix);
-
 }  // namespace status_internal
 
 ABSL_NAMESPACE_END

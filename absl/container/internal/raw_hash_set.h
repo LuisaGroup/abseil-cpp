@@ -95,21 +95,14 @@
 // Storing control bytes in a separate array also has beneficial cache effects,
 // since more logical slots will fit into a cache line.
 //
-// # Hashing
-//
-// We compute two separate hashes, `H1` and `H2`, from the hash of an object.
-// `H1(hash(x))` is an index into `slots`, and essentially the starting point
-// for the probe sequence. `H2(hash(x))` is a 7-bit value used to filter out
-// objects that cannot possibly be the one we are looking for.
-//
 // # Table operations.
 //
-// The key operations are `insert`, `find`, and `erase`.
+// The key operations are `insert`, `find`, and `erase_at`; the operations below
 //
-// Since `insert` and `erase` are implemented in terms of `find`, we describe
-// `find` first. To `find` a value `x`, we compute `hash(x)`. From
-// `H1(hash(x))` and the capacity, we construct a `probe_seq` that visits every
-// group of slots in some interesting order.
+// `insert` and `erase` are implemented in terms of find, so we describe that
+// one first. To `find` a value `x`, we compute `hash(x)`. From `H1(hash(x))`
+// and the capacity, we construct a `probe_seq` that visits every group of
+// slots in some interesting order.
 //
 // We now walk through these indices. At each index, we select the entire group
 // starting with that index and extract potential candidates: occupied slots
@@ -119,21 +112,32 @@
 // next probe index. Tombstones effectively behave like full slots that never
 // match the value we're looking for.
 //
-// The `H2` bits ensure when we compare a slot to an object with `==`, we are
-// likely to have actually found the object.  That is, the chance is low that
-// `==` is called and returns `false`.  Thus, when we search for an object, we
-// are unlikely to call `==` many times.  This likelyhood can be analyzed as
-// follows (assuming that H2 is a random enough hash function).
+// The `H2` bits ensure that if we perform a ==, a false positive is very very
+// rare (assuming the hash function looks enough like a random oracle). To see
+// this, note that in a group, there will be at most 8 or 16 `H2` values, but
+// an `H2` can be any one of 128 values. Viewed as a birthday attack, we can use
+// the rule of thumb that the probability of a collision among n choices of m
+// symbols is `p(n, m) ~ n^2/2m. In table form:
 //
-// Let's assume that there are `k` "wrong" objects that must be examined in a
-// probe sequence.  For example, when doing a `find` on an object that is in the
-// table, `k` is the number of objects between the start of the probe sequence
-// and the final found object (not including the final found object).  The
-// expected number of objects with an H2 match is then `k/128`.  Measurements
-// and analysis indicate that even at high load factors, `k` is less than 32,
-// meaning that the number of "false positive" comparisons we must perform is
-// less than 1/8 per `find`.
-
+//  n |  p(n) |  n |  p(n)
+//  0 | 0.000 |  8 | 0.250
+//  1 | 0.004 |  9 | 0.316
+//  2 | 0.016 | 10 | 0.391
+//  3 | 0.035 | 11 | 0.473
+//  4 | 0.062 | 12 | 0.562
+//  5 | 0.098 | 13 | 0.660
+//  6 | 0.141 | 14 | 0.766
+//  7 | 0.191 | 15 | 0.879
+//
+// The rule of thumb breaks down at around `n = 12`, but such groups would only
+// occur for tables close to their max load factor. This is far better than an
+// ordinary open-addressing table, which needs to perform an == at every step of
+// the probe sequence. These probabilities don't tell the full story (for
+// example, because elements are inserted into a group from the front, and
+// candidates are =='ed from the front, the collision is only effective in
+// rare cases e.g. another probe sequence inserted into a deleted slot in front
+// of us).
+//
 // `insert` is implemented in terms of `unchecked_insert`, which inserts a
 // value presumed to not be in the table (violating this requirement will cause
 // the table to behave erratically). Given `x` and its hash `hash(x)`, to insert
@@ -172,6 +176,18 @@
 #ifndef ABSL_CONTAINER_INTERNAL_RAW_HASH_SET_H_
 #define ABSL_CONTAINER_INTERNAL_RAW_HASH_SET_H_
 
+#ifdef __SSE2__
+#include <emmintrin.h>
+#endif
+
+#ifdef __SSSE3__
+#include <tmmintrin.h>
+#endif
+
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -185,7 +201,6 @@
 
 #include "absl/base/config.h"
 #include "absl/base/internal/endian.h"
-#include "absl/base/internal/prefetch.h"
 #include "absl/base/optimization.h"
 #include "absl/base/port.h"
 #include "absl/container/internal/common.h"
@@ -198,22 +213,6 @@
 #include "absl/meta/type_traits.h"
 #include "absl/numeric/bits.h"
 #include "absl/utility/utility.h"
-
-#ifdef ABSL_INTERNAL_HAVE_SSE2
-#include <emmintrin.h>
-#endif
-
-#ifdef ABSL_INTERNAL_HAVE_SSSE3
-#include <tmmintrin.h>
-#endif
-
-#ifdef _MSC_VER
-#include <intrin.h>
-#endif
-
-#ifdef ABSL_INTERNAL_HAVE_ARM_NEON
-#include <arm_neon.h>
-#endif
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN
@@ -233,7 +232,7 @@ void SwapAlloc(AllocType& /*lhs*/, AllocType& /*rhs*/,
 //
 // Currently, the sequence is a triangular progression of the form
 //
-//   p(i) := Width * (i^2 + i)/2 + hash (mod mask + 1)
+//   p(i) := Width * (i^2 - i)/2 + hash (mod mask + 1)
 //
 // The use of `Width` ensures that each probe step does not overlap groups;
 // the sequence effectively outputs the addresses of *groups* (although not
@@ -246,10 +245,6 @@ void SwapAlloc(AllocType& /*lhs*/, AllocType& /*rhs*/,
 // for selecting candidates. However, when those candidates' slots are
 // actually inspected, there are no corresponding slots for the cloned bytes,
 // so we need to make sure we've treated those offsets as "wrapping around".
-//
-// It turns out that this probe sequence visits every group exactly once if the
-// number of groups is a power of two, since (i^2+i)/2 is a bijection in
-// Z/(2^m). See https://en.wikipedia.org/wiki/Quadratic_probing
 template <size_t Width>
 class probe_seq {
  public:
@@ -323,15 +318,36 @@ uint32_t TrailingZeros(T x) {
 // controlled by `SignificantBits` and `Shift`. `SignificantBits` is the number
 // of abstract bits in the bitset, while `Shift` is the log-base-two of the
 // width of an abstract bit in the representation.
-// This mask provides operations for any number of real bits set in an abstract
-// bit. To add iteration on top of that, implementation must guarantee no more
-// than one real bit is set in an abstract bit.
+//
+// For example, when `SignificantBits` is 16 and `Shift` is zero, this is just
+// an ordinary 16-bit bitset occupying the low 16 bits of `mask`. When
+// `SignificantBits` is 8 and `Shift` is 3, abstract bits are represented as
+// the bytes `0x00` and `0x80`, and it occupies all 64 bits of the bitmask.
+//
+// For example:
+//   for (int i : BitMask<uint32_t, 16>(0b101)) -> yields 0, 2
+//   for (int i : BitMask<uint64_t, 8, 3>(0x0000000080800000)) -> yields 2, 3
 template <class T, int SignificantBits, int Shift = 0>
-class NonIterableBitMask {
- public:
-  explicit NonIterableBitMask(T mask) : mask_(mask) {}
+class BitMask {
+  static_assert(std::is_unsigned<T>::value, "");
+  static_assert(Shift == 0 || Shift == 3, "");
 
-  explicit operator bool() const { return this->mask_ != 0; }
+ public:
+  // BitMask is an iterator over the indices of its abstract bits.
+  using value_type = int;
+  using iterator = BitMask;
+  using const_iterator = BitMask;
+
+  explicit BitMask(T mask) : mask_(mask) {}
+  BitMask& operator++() {
+    mask_ &= (mask_ - 1);
+    return *this;
+  }
+  explicit operator bool() const { return mask_ != 0; }
+  uint32_t operator*() const { return LowestBitSet(); }
+
+  BitMask begin() const { return *this; }
+  BitMask end() const { return BitMask(0); }
 
   // Returns the index of the lowest *abstract* bit set in `self`.
   uint32_t LowestBitSet() const {
@@ -355,42 +371,6 @@ class NonIterableBitMask {
     return static_cast<uint32_t>(countl_zero(mask_ << extra_bits)) >> Shift;
   }
 
-  T mask_;
-};
-
-// Mask that can be iterable
-//
-// For example, when `SignificantBits` is 16 and `Shift` is zero, this is just
-// an ordinary 16-bit bitset occupying the low 16 bits of `mask`. When
-// `SignificantBits` is 8 and `Shift` is 3, abstract bits are represented as
-// the bytes `0x00` and `0x80`, and it occupies all 64 bits of the bitmask.
-//
-// For example:
-//   for (int i : BitMask<uint32_t, 16>(0b101)) -> yields 0, 2
-//   for (int i : BitMask<uint64_t, 8, 3>(0x0000000080800000)) -> yields 2, 3
-template <class T, int SignificantBits, int Shift = 0>
-class BitMask : public NonIterableBitMask<T, SignificantBits, Shift> {
-  using Base = NonIterableBitMask<T, SignificantBits, Shift>;
-  static_assert(std::is_unsigned<T>::value, "");
-  static_assert(Shift == 0 || Shift == 3, "");
-
- public:
-  explicit BitMask(T mask) : Base(mask) {}
-  // BitMask is an iterator over the indices of its abstract bits.
-  using value_type = int;
-  using iterator = BitMask;
-  using const_iterator = BitMask;
-
-  BitMask& operator++() {
-    this->mask_ &= (this->mask_ - 1);
-    return *this;
-  }
-
-  uint32_t operator*() const { return Base::LowestBitSet(); }
-
-  BitMask begin() const { return *this; }
-  BitMask end() const { return BitMask(0); }
-
  private:
   friend bool operator==(const BitMask& a, const BitMask& b) {
     return a.mask_ == b.mask_;
@@ -398,6 +378,8 @@ class BitMask : public NonIterableBitMask<T, SignificantBits, Shift> {
   friend bool operator!=(const BitMask& a, const BitMask& b) {
     return a.mask_ != b.mask_;
   }
+
+  T mask_;
 };
 
 using h2_t = uint8_t;
@@ -446,7 +428,7 @@ static_assert(
      static_cast<int8_t>(ctrl_t::kSentinel) & 0x7F) != 0,
     "ctrl_t::kEmpty and ctrl_t::kDeleted must share an unset bit that is not "
     "shared by ctrl_t::kSentinel to make the scalar test for "
-    "MaskEmptyOrDeleted() efficient");
+    "MatchEmptyOrDeleted() efficient");
 static_assert(ctrl_t::kDeleted == static_cast<ctrl_t>(-2),
               "ctrl_t::kDeleted must be -2 to make the implementation of "
               "ConvertSpecialToEmptyAndFullToDeleted efficient");
@@ -462,7 +444,7 @@ inline ctrl_t* EmptyGroup() {
 
 // Mixes a randomly generated per-process seed with `hash` and `ctrl` to
 // randomize insertion order within groups.
-bool ShouldInsertBackwards(size_t hash, const ctrl_t* ctrl);
+ABSL_DLL bool ShouldInsertBackwards(size_t hash, const ctrl_t* ctrl);
 
 // Returns a per-table, hash salt, which changes on resize. This gets mixed into
 // H1 to randomize iteration order per-table.
@@ -545,34 +527,32 @@ struct GroupSse2Impl {
 
   // Returns a bitmask representing the positions of slots that match hash.
   BitMask<uint32_t, kWidth> Match(h2_t hash) const {
-    auto match = _mm_set1_epi8(static_cast<char>(hash));
+    auto match = _mm_set1_epi8(hash);
     return BitMask<uint32_t, kWidth>(
         static_cast<uint32_t>(_mm_movemask_epi8(_mm_cmpeq_epi8(match, ctrl))));
   }
 
   // Returns a bitmask representing the positions of empty slots.
-  NonIterableBitMask<uint32_t, kWidth> MaskEmpty() const {
+  BitMask<uint32_t, kWidth> MatchEmpty() const {
 #ifdef ABSL_INTERNAL_HAVE_SSSE3
     // This only works because ctrl_t::kEmpty is -128.
-    return NonIterableBitMask<uint32_t, kWidth>(
+    return BitMask<uint32_t, kWidth>(
         static_cast<uint32_t>(_mm_movemask_epi8(_mm_sign_epi8(ctrl, ctrl))));
 #else
-    auto match = _mm_set1_epi8(static_cast<char>(ctrl_t::kEmpty));
-    return NonIterableBitMask<uint32_t, kWidth>(
-        static_cast<uint32_t>(_mm_movemask_epi8(_mm_cmpeq_epi8(match, ctrl))));
+    return Match(static_cast<h2_t>(ctrl_t::kEmpty));
 #endif
   }
 
   // Returns a bitmask representing the positions of empty or deleted slots.
-  NonIterableBitMask<uint32_t, kWidth> MaskEmptyOrDeleted() const {
-    auto special = _mm_set1_epi8(static_cast<char>(ctrl_t::kSentinel));
-    return NonIterableBitMask<uint32_t, kWidth>(static_cast<uint32_t>(
+  BitMask<uint32_t, kWidth> MatchEmptyOrDeleted() const {
+    auto special = _mm_set1_epi8(static_cast<uint8_t>(ctrl_t::kSentinel));
+    return BitMask<uint32_t, kWidth>(static_cast<uint32_t>(
         _mm_movemask_epi8(_mm_cmpgt_epi8_fixed(special, ctrl))));
   }
 
   // Returns the number of trailing empty or deleted elements in the group.
   uint32_t CountLeadingEmptyOrDeleted() const {
-    auto special = _mm_set1_epi8(static_cast<char>(ctrl_t::kSentinel));
+    auto special = _mm_set1_epi8(static_cast<uint8_t>(ctrl_t::kSentinel));
     return TrailingZeros(static_cast<uint32_t>(
         _mm_movemask_epi8(_mm_cmpgt_epi8_fixed(special, ctrl)) + 1));
   }
@@ -593,64 +573,6 @@ struct GroupSse2Impl {
   __m128i ctrl;
 };
 #endif  // ABSL_INTERNAL_RAW_HASH_SET_HAVE_SSE2
-
-#if defined(ABSL_INTERNAL_HAVE_ARM_NEON) && defined(ABSL_IS_LITTLE_ENDIAN)
-struct GroupAArch64Impl {
-  static constexpr size_t kWidth = 8;
-
-  explicit GroupAArch64Impl(const ctrl_t* pos) {
-    ctrl = vld1_u8(reinterpret_cast<const uint8_t*>(pos));
-  }
-
-  BitMask<uint64_t, kWidth, 3> Match(h2_t hash) const {
-    uint8x8_t dup = vdup_n_u8(hash);
-    auto mask = vceq_u8(ctrl, dup);
-    constexpr uint64_t msbs = 0x8080808080808080ULL;
-    return BitMask<uint64_t, kWidth, 3>(
-        vget_lane_u64(vreinterpret_u64_u8(mask), 0) & msbs);
-  }
-
-  NonIterableBitMask<uint64_t, kWidth, 3> MaskEmpty() const {
-    uint64_t mask =
-        vget_lane_u64(vreinterpret_u64_u8(vceq_s8(
-                          vdup_n_s8(static_cast<int8_t>(ctrl_t::kEmpty)),
-                          vreinterpret_s8_u8(ctrl))),
-                      0);
-    return NonIterableBitMask<uint64_t, kWidth, 3>(mask);
-  }
-
-  NonIterableBitMask<uint64_t, kWidth, 3> MaskEmptyOrDeleted() const {
-    uint64_t mask =
-        vget_lane_u64(vreinterpret_u64_u8(vcgt_s8(
-                          vdup_n_s8(static_cast<int8_t>(ctrl_t::kSentinel)),
-                          vreinterpret_s8_u8(ctrl))),
-                      0);
-    return NonIterableBitMask<uint64_t, kWidth, 3>(mask);
-  }
-
-  uint32_t CountLeadingEmptyOrDeleted() const {
-    uint64_t mask = vget_lane_u64(vreinterpret_u64_u8(ctrl), 0);
-    // ctrl | ~(ctrl >> 7) will have the lowest bit set to zero for kEmpty and
-    // kDeleted. We lower all other bits and count number of trailing zeros.
-    // Clang and GCC optimize countr_zero to rbit+clz without any check for 0,
-    // so we should be fine.
-    constexpr uint64_t bits = 0x0101010101010101ULL;
-    return static_cast<uint32_t>(countr_zero((mask | ~(mask >> 7)) & bits) >>
-                                 3);
-  }
-
-  void ConvertSpecialToEmptyAndFullToDeleted(ctrl_t* dst) const {
-    uint64_t mask = vget_lane_u64(vreinterpret_u64_u8(ctrl), 0);
-    constexpr uint64_t msbs = 0x8080808080808080ULL;
-    constexpr uint64_t lsbs = 0x0101010101010101ULL;
-    auto x = mask & msbs;
-    auto res = (~x + (x >> 7)) & ~lsbs;
-    little_endian::Store64(dst, res);
-  }
-
-  uint8x8_t ctrl;
-};
-#endif  // ABSL_INTERNAL_HAVE_ARM_NEON && ABSL_IS_LITTLE_ENDIAN
 
 struct GroupPortableImpl {
   static constexpr size_t kWidth = 8;
@@ -678,24 +600,19 @@ struct GroupPortableImpl {
     return BitMask<uint64_t, kWidth, 3>((x - lsbs) & ~x & msbs);
   }
 
-  NonIterableBitMask<uint64_t, kWidth, 3> MaskEmpty() const {
+  BitMask<uint64_t, kWidth, 3> MatchEmpty() const {
     constexpr uint64_t msbs = 0x8080808080808080ULL;
-    return NonIterableBitMask<uint64_t, kWidth, 3>((ctrl & (~ctrl << 6)) &
-                                                   msbs);
+    return BitMask<uint64_t, kWidth, 3>((ctrl & (~ctrl << 6)) & msbs);
   }
 
-  NonIterableBitMask<uint64_t, kWidth, 3> MaskEmptyOrDeleted() const {
+  BitMask<uint64_t, kWidth, 3> MatchEmptyOrDeleted() const {
     constexpr uint64_t msbs = 0x8080808080808080ULL;
-    return NonIterableBitMask<uint64_t, kWidth, 3>((ctrl & (~ctrl << 7)) &
-                                                   msbs);
+    return BitMask<uint64_t, kWidth, 3>((ctrl & (~ctrl << 7)) & msbs);
   }
 
   uint32_t CountLeadingEmptyOrDeleted() const {
-    // ctrl | ~(ctrl >> 7) will have the lowest bit set to zero for kEmpty and
-    // kDeleted. We lower all other bits and count number of trailing zeros.
-    constexpr uint64_t bits = 0x0101010101010101ULL;
-    return static_cast<uint32_t>(countr_zero((ctrl | ~(ctrl >> 7)) & bits) >>
-                                 3);
+    constexpr uint64_t gaps = 0x00FEFEFEFEFEFEFEULL;
+    return (TrailingZeros(((~ctrl & (ctrl >> 7)) | gaps) + 1) + 7) >> 3;
   }
 
   void ConvertSpecialToEmptyAndFullToDeleted(ctrl_t* dst) const {
@@ -711,8 +628,6 @@ struct GroupPortableImpl {
 
 #ifdef ABSL_INTERNAL_HAVE_SSE2
 using Group = GroupSse2Impl;
-#elif defined(ABSL_INTERNAL_HAVE_ARM_NEON) && defined(ABSL_IS_LITTLE_ENDIAN)
-using Group = GroupAArch64Impl;
 #else
 using Group = GroupPortableImpl;
 #endif
@@ -740,7 +655,7 @@ inline bool IsValidCapacity(size_t n) { return ((n + 1) & n) == 0 && n > 0; }
 //   IsValidCapacity(capacity)
 //   ctrl[capacity] == ctrl_t::kSentinel
 //   ctrl[i] != ctrl_t::kSentinel for all i < capacity
-void ConvertDeletedToEmptyAndFullToDeleted(ctrl_t* ctrl, size_t capacity);
+ABSL_DLL void ConvertDeletedToEmptyAndFullToDeleted(ctrl_t* ctrl, size_t capacity);
 
 // Converts `n` into the next valid capacity, per `IsValidCapacity`.
 inline size_t NormalizeCapacity(size_t n) {
@@ -846,7 +761,7 @@ inline FindInfo find_first_non_full(const ctrl_t* ctrl, size_t hash,
   auto seq = probe(ctrl, hash, capacity);
   while (true) {
     Group g{ctrl + seq.offset()};
-    auto mask = g.MaskEmptyOrDeleted();
+    auto mask = g.MatchEmptyOrDeleted();
     if (mask) {
 #if !defined(NDEBUG)
       // We want to add entropy even when ASLR is not enabled.
@@ -867,7 +782,7 @@ inline FindInfo find_first_non_full(const ctrl_t* ctrl, size_t hash,
 // Extern template for inline function keep possibility of inlining.
 // When compiler decided to not inline, no symbols will be added to the
 // corresponding translation unit.
-extern template FindInfo find_first_non_full(const ctrl_t*, size_t, size_t);
+//extern template FindInfo find_first_non_full(const ctrl_t*, size_t, size_t);
 
 // Sets `ctrl` to `{kEmpty, kSentinel, ..., kEmpty}`, marking the entire
 // array as marked as empty.
@@ -1144,12 +1059,11 @@ class raw_hash_set {
           std::is_nothrow_default_constructible<key_equal>::value&&
               std::is_nothrow_default_constructible<allocator_type>::value) {}
 
-  explicit raw_hash_set(size_t bucket_count,
-                        const hasher& hash = hasher(),
+  explicit raw_hash_set(size_t bucket_count, const hasher& hash = hasher(),
                         const key_equal& eq = key_equal(),
                         const allocator_type& alloc = allocator_type())
       : ctrl_(EmptyGroup()),
-        settings_(0u, HashtablezInfoHandle(), hash, eq, alloc) {
+        settings_(0, HashtablezInfoHandle(), hash, eq, alloc) {
     if (bucket_count) {
       capacity_ = NormalizeCapacity(bucket_count);
       initialize_slots();
@@ -1274,16 +1188,14 @@ class raw_hash_set {
               std::is_nothrow_copy_constructible<allocator_type>::value)
       : ctrl_(absl::exchange(that.ctrl_, EmptyGroup())),
         slots_(absl::exchange(that.slots_, nullptr)),
-        size_(absl::exchange(that.size_, size_t{0})),
-        capacity_(absl::exchange(that.capacity_, size_t{0})),
+        size_(absl::exchange(that.size_, 0)),
+        capacity_(absl::exchange(that.capacity_, 0)),
         // Hash, equality and allocator are copied instead of moved because
         // `that` must be left valid. If Hash is std::function<Key>, moving it
         // would create a nullptr functor that cannot be called.
-        settings_(absl::exchange(that.growth_left(), size_t{0}),
+        settings_(absl::exchange(that.growth_left(), 0),
                   absl::exchange(that.infoz(), HashtablezInfoHandle()),
-                  that.hash_ref(),
-                  that.eq_ref(),
-                  that.alloc_ref()) {}
+                  that.hash_ref(), that.eq_ref(), that.alloc_ref()) {}
 
   raw_hash_set(raw_hash_set&& that, const allocator_type& a)
       : ctrl_(EmptyGroup()),
@@ -1724,13 +1636,12 @@ class raw_hash_set {
   template <class K = key_type>
   void prefetch(const key_arg<K>& key) const {
     (void)key;
-    // Avoid probing if we won't be able to prefetch the addresses received.
-#ifdef ABSL_INTERNAL_HAVE_PREFETCH
+#if defined(__GNUC__)
     prefetch_heap_block();
     auto seq = probe(ctrl_, hash_ref()(key), capacity_);
-    base_internal::PrefetchT0(ctrl_ + seq.offset());
-    base_internal::PrefetchT0(slots_ + seq.offset());
-#endif  // ABSL_INTERNAL_HAVE_PREFETCH
+    __builtin_prefetch(static_cast<const void*>(ctrl_ + seq.offset()));
+    __builtin_prefetch(static_cast<const void*>(slots_ + seq.offset()));
+#endif  // __GNUC__
   }
 
   // The API of find() has two extensions.
@@ -1751,7 +1662,7 @@ class raw_hash_set {
                 PolicyTraits::element(slots_ + seq.offset(i)))))
           return iterator_at(seq.offset(i));
       }
-      if (ABSL_PREDICT_TRUE(g.MaskEmpty())) return end();
+      if (ABSL_PREDICT_TRUE(g.MatchEmpty())) return end();
       seq.next();
       assert(seq.index() <= capacity_ && "full table!");
     }
@@ -1900,8 +1811,8 @@ class raw_hash_set {
     --size_;
     const size_t index = static_cast<size_t>(it.inner_.ctrl_ - ctrl_);
     const size_t index_before = (index - Group::kWidth) & capacity_;
-    const auto empty_after = Group(it.inner_.ctrl_).MaskEmpty();
-    const auto empty_before = Group(ctrl_ + index_before).MaskEmpty();
+    const auto empty_after = Group(it.inner_.ctrl_).MatchEmpty();
+    const auto empty_before = Group(ctrl_ + index_before).MatchEmpty();
 
     // We count how many consecutive non empties we have to the right and to the
     // left of `it`. If the sum is >= kWidth then there is at least one probe
@@ -2142,7 +2053,7 @@ class raw_hash_set {
                               elem))
           return true;
       }
-      if (ABSL_PREDICT_TRUE(g.MaskEmpty())) return false;
+      if (ABSL_PREDICT_TRUE(g.MatchEmpty())) return false;
       seq.next();
       assert(seq.index() <= capacity_ && "full table!");
     }
@@ -2178,7 +2089,7 @@ class raw_hash_set {
                 PolicyTraits::element(slots_ + seq.offset(i)))))
           return {seq.offset(i), false};
       }
-      if (ABSL_PREDICT_TRUE(g.MaskEmpty())) break;
+      if (ABSL_PREDICT_TRUE(g.MatchEmpty())) break;
       seq.next();
       assert(seq.index() <= capacity_ && "full table!");
     }
@@ -2248,7 +2159,9 @@ class raw_hash_set {
   // This is intended to overlap with execution of calculating the hash for a
   // key.
   void prefetch_heap_block() const {
-    base_internal::PrefetchT2(ctrl_);
+#if defined(__GNUC__)
+    __builtin_prefetch(static_cast<const void*>(ctrl_), 0, 1);
+#endif  // __GNUC__
   }
 
   HashtablezInfoHandle& infoz() { return settings_.template get<1>(); }
@@ -2323,7 +2236,7 @@ struct HashtableDebugAccess<Set, absl::void_t<typename Set::raw_hash_set>> {
           return num_probes;
         ++num_probes;
       }
-      if (g.MaskEmpty()) return num_probes;
+      if (g.MatchEmpty()) return num_probes;
       seq.next();
       ++num_probes;
     }

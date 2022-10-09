@@ -27,7 +27,6 @@
 #include <vector>
 
 #include "absl/hash/hash.h"
-#include "absl/strings/string_view.h"
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN

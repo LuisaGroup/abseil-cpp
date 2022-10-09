@@ -32,7 +32,7 @@
 #include "absl/container/internal/hash_policy_testing.h"
 #include "absl/memory/memory.h"
 #include "absl/meta/type_traits.h"
-#include "absl/strings/string_view.h"
+//#include "absl/strings/string_view.h"
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN
@@ -108,8 +108,8 @@ struct Generator<std::string> {
 };
 
 template <>
-struct Generator<absl::string_view> {
-  absl::string_view operator()() const;
+struct Generator<std::string_view> {
+  std::string_view operator()() const;
 };
 
 template <>

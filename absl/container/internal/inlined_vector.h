@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ABSL_CONTAINER_INTERNAL_INLINED_VECTOR_H_
-#define ABSL_CONTAINER_INTERNAL_INLINED_VECTOR_H_
+#ifndef ABSL_CONTAINER_INTERNAL_INLINED_VECTOR_INTERNAL_H_
+#define ABSL_CONTAINER_INTERNAL_INLINED_VECTOR_INTERNAL_H_
 
 #include <algorithm>
 #include <cstddef>
@@ -40,6 +40,7 @@ namespace inlined_vector_internal {
 #if !defined(__clang__) && defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
 template <typename A>
@@ -610,7 +611,7 @@ auto Storage<T, N, A>::Resize(ValueAdapter values, SizeType<A> new_size)
     // Steps:
     //  a. Allocate new backing store.
     //  b. Construct new elements in new backing store.
-    //  c. Move existing elements from old backing store to new backing store.
+    //  c. Move existing elements from old backing store to now.
     //  d. Destroy all elements in old backing store.
     // Use transactional wrappers for the first two steps so we can roll
     // back if necessary due to exceptions.
@@ -641,8 +642,8 @@ auto Storage<T, N, A>::Insert(ConstIterator<A> pos, ValueAdapter values,
                               SizeType<A> insert_count) -> Iterator<A> {
   StorageView<A> storage_view = MakeStorageView();
 
-  auto insert_index = static_cast<SizeType<A>>(
-      std::distance(ConstIterator<A>(storage_view.data), pos));
+  SizeType<A> insert_index =
+      std::distance(ConstIterator<A>(storage_view.data), pos);
   SizeType<A> insert_end_index = insert_index + insert_count;
   SizeType<A> new_size = storage_view.size + insert_count;
 
@@ -784,9 +785,9 @@ auto Storage<T, N, A>::Erase(ConstIterator<A> from, ConstIterator<A> to)
     -> Iterator<A> {
   StorageView<A> storage_view = MakeStorageView();
 
-  auto erase_size = static_cast<SizeType<A>>(std::distance(from, to));
-  auto erase_index = static_cast<SizeType<A>>(
-      std::distance(ConstIterator<A>(storage_view.data), from));
+  SizeType<A> erase_size = std::distance(from, to);
+  SizeType<A> erase_index =
+      std::distance(ConstIterator<A>(storage_view.data), from);
   SizeType<A> erase_end_index = erase_index + erase_size;
 
   IteratorValueAdapter<A, MoveIterator<A>> move_values(
@@ -941,7 +942,7 @@ auto Storage<T, N, A>::Swap(Storage* other_storage_ptr) -> void {
   swap(GetAllocator(), other_storage_ptr->GetAllocator());
 }
 
-// End ignore "array-bounds"
+// End ignore "array-bounds" and "maybe-uninitialized"
 #if !defined(__clang__) && defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
@@ -950,4 +951,4 @@ auto Storage<T, N, A>::Swap(Storage* other_storage_ptr) -> void {
 ABSL_NAMESPACE_END
 }  // namespace absl
 
-#endif  // ABSL_CONTAINER_INTERNAL_INLINED_VECTOR_H_
+#endif  // ABSL_CONTAINER_INTERNAL_INLINED_VECTOR_INTERNAL_H_

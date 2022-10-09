@@ -20,48 +20,27 @@ absl_cc_library(
     "status.h"
   SRCS
     "internal/status_internal.h"
-    "status.cc"
-    "status_payload_printer.h"
-    "status_payload_printer.cc"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
     absl::atomic_hook
     absl::config
-    absl::cord
     absl::core_headers
     absl::function_ref
-    absl::inlined_vector
-    absl::optional
     absl::raw_logging_internal
+    absl::inlined_vector
     absl::stacktrace
-    absl::str_format
-    absl::strerror
-    absl::strings
     absl::symbolize
+    absl::cord
+    absl::str_format
+    absl::optional
   PUBLIC
-)
-
-absl_cc_test(
-  NAME
-    status_test
-  SRCS
-   "status_test.cc"
-  COPTS
-    ${ABSL_TEST_COPTS}
-  DEPS
-    absl::status
-    absl::strings
-    GTest::gmock_main
 )
 
 absl_cc_library(
   NAME
     statusor
-  HDRS
-    "statusor.h"
   SRCS
-    "statusor.cc"
     "internal/statusor_internal.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
@@ -71,21 +50,7 @@ absl_cc_library(
     absl::core_headers
     absl::raw_logging_internal
     absl::type_traits
-    absl::strings
     absl::utility
     absl::variant
   PUBLIC
-)
-
-absl_cc_test(
-  NAME
-    statusor_test
-  SRCS
-   "statusor_test.cc"
-  COPTS
-    ${ABSL_TEST_COPTS}
-  DEPS
-    absl::status
-    absl::statusor
-    GTest::gmock_main
 )
