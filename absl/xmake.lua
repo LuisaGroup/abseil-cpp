@@ -1,6 +1,7 @@
 BuildProject({
 	projectName = "abseil_dll",
-	projectType = "shared"
+	projectType = "shared",
+	unityBuildBatch = 64
 })
 add_defines("ABSL_BUILD_DLL=1")
 add_defines("ABSL_CONSUME_DLL=1", "NOMINMAX", {
