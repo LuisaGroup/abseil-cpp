@@ -16,8 +16,6 @@
 #define ABSL_CONTAINER_INTERNAL_UNORDERED_SET_CONSTRUCTOR_TEST_H_
 
 #include <algorithm>
-#include <unordered_set>
-#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"

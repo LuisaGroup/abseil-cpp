@@ -45,10 +45,7 @@
 #include <iterator>
 #include <numeric>
 #include <type_traits>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
-#include <vector>
 
 #include "absl/algorithm/algorithm.h"
 #include "absl/base/macros.h"
@@ -108,11 +105,6 @@ struct IsUnorderedContainer : std::false_type {};
 template <class Key, class T, class Hash, class KeyEqual, class Allocator>
 struct IsUnorderedContainer<
     std::unordered_map<Key, T, Hash, KeyEqual, Allocator>> : std::true_type {};
-
-template <class Key, class Hash, class KeyEqual, class Allocator>
-struct IsUnorderedContainer<std::unordered_set<Key, Hash, KeyEqual, Allocator>>
-    : std::true_type {};
-
 // container_algorithm_internal::c_size. It is meant for internal use only.
 
 template <class C>

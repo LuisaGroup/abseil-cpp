@@ -27,7 +27,6 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 #include "absl/container/internal/hash_policy_testing.h"
 #include "absl/memory/memory.h"

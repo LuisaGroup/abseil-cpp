@@ -18,7 +18,6 @@
 #include <algorithm>
 #include <ostream>
 #include <string>
-#include <vector>
 
 #include "absl/hash/hash.h"
 #include "absl/strings/match.h"

@@ -20,27 +20,17 @@
 #define ABSL_HASH_INTERNAL_HASH_H_
 
 #include <algorithm>
-#include <array>
-#include <bitset>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
-#include <deque>
 #include <forward_list>
-#include <functional>
 #include <iterator>
 #include <limits>
-#include <list>
-#include <map>
 #include <memory>
-#include <set>
 #include <string>
 #include <tuple>
 #include <type_traits>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
-#include <vector>
 
 #include "absl/base/config.h"
 #include "absl/base/internal/unaligned_access.h"
@@ -553,19 +543,6 @@ typename std::enable_if<is_hashable<T>::value, H>::type AbslHashValue(
   return H::combine_contiguous(std::move(hash_state), array.data(),
                                array.size());
 }
-
-// AbslHashValue for hashing std::deque
-template <typename H, typename T, typename Allocator>
-typename std::enable_if<is_hashable<T>::value, H>::type AbslHashValue(
-    H hash_state, const std::deque<T, Allocator>& deque) {
-  // TODO(gromer): investigate a more efficient implementation taking
-  // advantage of the chunk structure.
-  for (const auto& t : deque) {
-    hash_state = H::combine(std::move(hash_state), t);
-  }
-  return H::combine(std::move(hash_state), deque.size());
-}
-
 // AbslHashValue for hashing std::forward_list
 template <typename H, typename T, typename Allocator>
 typename std::enable_if<is_hashable<T>::value, H>::type AbslHashValue(
@@ -639,81 +616,6 @@ AbslHashValue(H hash_state, const std::vector<T, Allocator>& vector) {
                     vector.size());
 }
 #endif
-
-// -----------------------------------------------------------------------------
-// AbslHashValue for Ordered Associative Containers
-// -----------------------------------------------------------------------------
-
-// AbslHashValue for hashing std::map
-template <typename H, typename Key, typename T, typename Compare,
-          typename Allocator>
-typename std::enable_if<is_hashable<Key>::value && is_hashable<T>::value,
-                        H>::type
-AbslHashValue(H hash_state, const std::map<Key, T, Compare, Allocator>& map) {
-  for (const auto& t : map) {
-    hash_state = H::combine(std::move(hash_state), t);
-  }
-  return H::combine(std::move(hash_state), map.size());
-}
-
-// AbslHashValue for hashing std::multimap
-template <typename H, typename Key, typename T, typename Compare,
-          typename Allocator>
-typename std::enable_if<is_hashable<Key>::value && is_hashable<T>::value,
-                        H>::type
-AbslHashValue(H hash_state,
-              const std::multimap<Key, T, Compare, Allocator>& map) {
-  for (const auto& t : map) {
-    hash_state = H::combine(std::move(hash_state), t);
-  }
-  return H::combine(std::move(hash_state), map.size());
-}
-
-// AbslHashValue for hashing std::set
-template <typename H, typename Key, typename Compare, typename Allocator>
-typename std::enable_if<is_hashable<Key>::value, H>::type AbslHashValue(
-    H hash_state, const std::set<Key, Compare, Allocator>& set) {
-  for (const auto& t : set) {
-    hash_state = H::combine(std::move(hash_state), t);
-  }
-  return H::combine(std::move(hash_state), set.size());
-}
-
-// AbslHashValue for hashing std::multiset
-template <typename H, typename Key, typename Compare, typename Allocator>
-typename std::enable_if<is_hashable<Key>::value, H>::type AbslHashValue(
-    H hash_state, const std::multiset<Key, Compare, Allocator>& set) {
-  for (const auto& t : set) {
-    hash_state = H::combine(std::move(hash_state), t);
-  }
-  return H::combine(std::move(hash_state), set.size());
-}
-
-// -----------------------------------------------------------------------------
-// AbslHashValue for Unordered Associative Containers
-// -----------------------------------------------------------------------------
-
-// AbslHashValue for hashing std::unordered_set
-template <typename H, typename Key, typename Hash, typename KeyEqual,
-          typename Alloc>
-typename std::enable_if<is_hashable<Key>::value, H>::type AbslHashValue(
-    H hash_state, const std::unordered_set<Key, Hash, KeyEqual, Alloc>& s) {
-  return H::combine(
-      H::combine_unordered(std::move(hash_state), s.begin(), s.end()),
-      s.size());
-}
-
-// AbslHashValue for hashing std::unordered_multiset
-template <typename H, typename Key, typename Hash, typename KeyEqual,
-          typename Alloc>
-typename std::enable_if<is_hashable<Key>::value, H>::type AbslHashValue(
-    H hash_state,
-    const std::unordered_multiset<Key, Hash, KeyEqual, Alloc>& s) {
-  return H::combine(
-      H::combine_unordered(std::move(hash_state), s.begin(), s.end()),
-      s.size());
-}
-
 // AbslHashValue for hashing std::unordered_set
 template <typename H, typename Key, typename T, typename Hash,
           typename KeyEqual, typename Alloc>

@@ -36,10 +36,8 @@
 #ifndef ABSL_TYPES_INTERNAL_CONFORMANCE_PROFILE_H_
 #define ABSL_TYPES_INTERNAL_CONFORMANCE_PROFILE_H_
 
-#include <set>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 #include "gtest/gtest.h"
 #include "absl/algorithm/container.h"

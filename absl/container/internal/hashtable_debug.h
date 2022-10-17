@@ -33,7 +33,6 @@
 #include <cstddef>
 #include <algorithm>
 #include <type_traits>
-#include <vector>
 
 #include "absl/container/internal/hashtable_debug_hooks.h"
 

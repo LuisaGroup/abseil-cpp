@@ -207,7 +207,7 @@
 #include "absl/container/internal/compressed_tuple.h"
 #include "absl/container/internal/container_memory.h"
 #include "absl/container/internal/hash_policy_traits.h"
-#include "absl/container/internal/hashtable_debug_hooks.h"
+// #include "absl/container/internal/hashtable_debug_hooks.h"
 #include "absl/container/internal/hashtablez_sampler.h"
 #include "absl/memory/memory.h"
 #include "absl/meta/type_traits.h"
@@ -1743,9 +1743,6 @@ class raw_hash_set {
   }
 
  private:
-  template <class Container, typename Enabler>
-  friend struct absl::container_internal::hashtable_debug_internal::
-      HashtableDebugAccess;
 
   struct FindElement {
     template <class K, class... Args>
@@ -2215,65 +2212,6 @@ typename raw_hash_set<P, H, E, A>::size_type EraseIf(
   return initial_size - c->size();
 }
 
-namespace hashtable_debug_internal {
-template <typename Set>
-struct HashtableDebugAccess<Set, absl::void_t<typename Set::raw_hash_set>> {
-  using Traits = typename Set::PolicyTraits;
-  using Slot = typename Traits::slot_type;
-
-  static size_t GetNumProbes(const Set& set,
-                             const typename Set::key_type& key) {
-    size_t num_probes = 0;
-    size_t hash = set.hash_ref()(key);
-    auto seq = probe(set.ctrl_, hash, set.capacity_);
-    while (true) {
-      container_internal::Group g{set.ctrl_ + seq.offset()};
-      for (uint32_t i : g.Match(container_internal::H2(hash))) {
-        if (Traits::apply(
-                typename Set::template EqualElement<typename Set::key_type>{
-                    key, set.eq_ref()},
-                Traits::element(set.slots_ + seq.offset(i))))
-          return num_probes;
-        ++num_probes;
-      }
-      if (g.MatchEmpty()) return num_probes;
-      seq.next();
-      ++num_probes;
-    }
-  }
-
-  static size_t AllocatedByteSize(const Set& c) {
-    size_t capacity = c.capacity_;
-    if (capacity == 0) return 0;
-    size_t m = AllocSize(capacity, sizeof(Slot), alignof(Slot));
-
-    size_t per_slot = Traits::space_used(static_cast<const Slot*>(nullptr));
-    if (per_slot != ~size_t{}) {
-      m += per_slot * c.size();
-    } else {
-      for (size_t i = 0; i != capacity; ++i) {
-        if (container_internal::IsFull(c.ctrl_[i])) {
-          m += Traits::space_used(c.slots_ + i);
-        }
-      }
-    }
-    return m;
-  }
-
-  static size_t LowerBoundAllocatedByteSize(size_t size) {
-    size_t capacity = GrowthToLowerboundCapacity(size);
-    if (capacity == 0) return 0;
-    size_t m =
-        AllocSize(NormalizeCapacity(capacity), sizeof(Slot), alignof(Slot));
-    size_t per_slot = Traits::space_used(static_cast<const Slot*>(nullptr));
-    if (per_slot != ~size_t{}) {
-      m += per_slot * size;
-    }
-    return m;
-  }
-};
-
-}  // namespace hashtable_debug_internal
 }  // namespace container_internal
 ABSL_NAMESPACE_END
 }  // namespace absl
