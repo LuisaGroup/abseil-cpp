@@ -8,9 +8,6 @@ add_defines("ABSL_CONSUME_DLL=1", "NOMINMAX", {
 	public = true
 })
 add_files("**.cc")
---[[
-   
-]]
 add_includedirs("../", {
 	public = true
 })
