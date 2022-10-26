@@ -26,11 +26,13 @@
 
 #include <atomic>
 #include <cstddef>
-#include <functional>
 
 #include "absl/base/config.h"
 #include "absl/base/thread_annotations.h"
-
+namespace std{
+template <class T>
+class function;
+}
 namespace absl {
 ABSL_NAMESPACE_BEGIN
 namespace profiling_internal {

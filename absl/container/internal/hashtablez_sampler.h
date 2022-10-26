@@ -40,7 +40,6 @@
 #define ABSL_CONTAINER_INTERNAL_HASHTABLEZ_SAMPLER_H_
 
 #include <atomic>
-#include <functional>
 #include <memory>
 
 #include "absl/base/config.h"

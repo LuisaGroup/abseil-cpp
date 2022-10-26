@@ -36,7 +36,6 @@
 #define ABSL_META_TYPE_TRAITS_H_
 
 #include <cstddef>
-#include <functional>
 #include <type_traits>
 
 #include "absl/base/config.h"

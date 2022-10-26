@@ -17,7 +17,6 @@
 #include <atomic>
 #include <cassert>
 #include <cmath>
-#include <functional>
 #include <limits>
 
 #include "absl/base/attributes.h"

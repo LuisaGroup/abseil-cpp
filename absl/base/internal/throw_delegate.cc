@@ -15,7 +15,6 @@
 #include "absl/base/internal/throw_delegate.h"
 
 #include <cstdlib>
-#include <functional>
 #include <new>
 #include <stdexcept>
 

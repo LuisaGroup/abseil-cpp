@@ -55,7 +55,6 @@ ABSL_NAMESPACE_END
 #else  // ABSL_USES_STD_OPTIONAL
 
 #include <cassert>
-#include <functional>
 #include <initializer_list>
 #include <type_traits>
 #include <utility>

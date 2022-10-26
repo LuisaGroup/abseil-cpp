@@ -68,7 +68,6 @@ ABSL_NAMESPACE_END
 
 #else  // ABSL_USES_STD_VARIANT
 
-#include <functional>
 #include <new>
 #include <type_traits>
 #include <utility>

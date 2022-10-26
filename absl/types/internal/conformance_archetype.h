@@ -35,7 +35,6 @@
 #define ABSL_TYPES_INTERNAL_CONFORMANCE_ARCHETYPE_H_
 
 #include <cstddef>
-#include <functional>
 #include <type_traits>
 #include <utility>
 

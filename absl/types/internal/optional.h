@@ -15,7 +15,6 @@
 #ifndef ABSL_TYPES_INTERNAL_OPTIONAL_H_
 #define ABSL_TYPES_INTERNAL_OPTIONAL_H_
 
-#include <functional>
 #include <new>
 #include <type_traits>
 #include <utility>

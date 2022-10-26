@@ -47,7 +47,6 @@
 #define ABSL_FUNCTIONAL_FUNCTION_REF_H_
 
 #include <cassert>
-#include <functional>
 #include <type_traits>
 
 #include "absl/base/attributes.h"

@@ -50,7 +50,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <functional>
 #include <iterator>
 #include <limits>
 #include <new>

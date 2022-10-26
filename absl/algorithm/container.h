@@ -101,10 +101,6 @@ ContainerIter<C> c_end(C& c) { return end(c); }
 
 template <typename T>
 struct IsUnorderedContainer : std::false_type {};
-
-template <class Key, class T, class Hash, class KeyEqual, class Allocator>
-struct IsUnorderedContainer<
-    std::unordered_map<Key, T, Hash, KeyEqual, Allocator>> : std::true_type {};
 // container_algorithm_internal::c_size. It is meant for internal use only.
 
 template <class C>

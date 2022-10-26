@@ -555,29 +555,6 @@ typename std::enable_if<is_hashable<T>::value, H>::type AbslHashValue(
   return H::combine(std::move(hash_state), size);
 }
 
-// AbslHashValue for hashing std::list
-template <typename H, typename T, typename Allocator>
-typename std::enable_if<is_hashable<T>::value, H>::type AbslHashValue(
-    H hash_state, const std::list<T, Allocator>& list) {
-  for (const auto& t : list) {
-    hash_state = H::combine(std::move(hash_state), t);
-  }
-  return H::combine(std::move(hash_state), list.size());
-}
-
-// AbslHashValue for hashing std::vector
-//
-// Do not use this for vector<bool> on platforms that have a working
-// implementation of std::hash. It does not have a .data(), and a fallback for
-// std::hash<> is most likely faster.
-template <typename H, typename T, typename Allocator>
-typename std::enable_if<is_hashable<T>::value && !std::is_same<T, bool>::value,
-                        H>::type
-AbslHashValue(H hash_state, const std::vector<T, Allocator>& vector) {
-  return H::combine(H::combine_contiguous(std::move(hash_state), vector.data(),
-                                          vector.size()),
-                    vector.size());
-}
 
 // AbslHashValue special cases for hashing std::vector<bool>
 
@@ -599,46 +576,7 @@ AbslHashValue(H hash_state, const std::vector<T, Allocator>& vector) {
   }
   return H::combine(combiner.finalize(std::move(hash_state)), vector.size());
 }
-#else
-// When not working around the libstdc++ bug above, we still have to contend
-// with the fact that std::hash<vector<bool>> is often poor quality, hashing
-// directly on the internal words and on no other state.  On these platforms,
-// vector<bool>{1, 1} and vector<bool>{1, 1, 0} hash to the same value.
-//
-// Mixing in the size (as we do in our other vector<> implementations) on top
-// of the library-provided hash implementation avoids this QOI issue.
-template <typename H, typename T, typename Allocator>
-typename std::enable_if<is_hashable<T>::value && std::is_same<T, bool>::value,
-                        H>::type
-AbslHashValue(H hash_state, const std::vector<T, Allocator>& vector) {
-  return H::combine(std::move(hash_state),
-                    std::hash<std::vector<T, Allocator>>{}(vector),
-                    vector.size());
-}
 #endif
-// AbslHashValue for hashing std::unordered_set
-template <typename H, typename Key, typename T, typename Hash,
-          typename KeyEqual, typename Alloc>
-typename std::enable_if<is_hashable<Key>::value && is_hashable<T>::value,
-                        H>::type
-AbslHashValue(H hash_state,
-              const std::unordered_map<Key, T, Hash, KeyEqual, Alloc>& s) {
-  return H::combine(
-      H::combine_unordered(std::move(hash_state), s.begin(), s.end()),
-      s.size());
-}
-
-// AbslHashValue for hashing std::unordered_multiset
-template <typename H, typename Key, typename T, typename Hash,
-          typename KeyEqual, typename Alloc>
-typename std::enable_if<is_hashable<Key>::value && is_hashable<T>::value,
-                        H>::type
-AbslHashValue(H hash_state,
-              const std::unordered_multimap<Key, T, Hash, KeyEqual, Alloc>& s) {
-  return H::combine(
-      H::combine_unordered(std::move(hash_state), s.begin(), s.end()),
-      s.size());
-}
 
 // -----------------------------------------------------------------------------
 // AbslHashValue for Wrapper Types

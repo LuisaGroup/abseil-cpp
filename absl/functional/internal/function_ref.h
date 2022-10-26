@@ -16,12 +16,13 @@
 #define ABSL_FUNCTIONAL_INTERNAL_FUNCTION_REF_H_
 
 #include <cassert>
-#include <functional>
 #include <type_traits>
-
 #include "absl/base/internal/invoke.h"
 #include "absl/meta/type_traits.h"
-
+namespace std{
+template <typename T>
+class function;
+}
 namespace absl {
 ABSL_NAMESPACE_BEGIN
 namespace functional_internal {
