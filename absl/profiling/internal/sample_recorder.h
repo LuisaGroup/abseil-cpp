@@ -28,7 +28,6 @@
 #include <cstddef>
 
 #include "absl/base/config.h"
-#include "absl/base/thread_annotations.h"
 namespace std{
 template <class T>
 class function;
