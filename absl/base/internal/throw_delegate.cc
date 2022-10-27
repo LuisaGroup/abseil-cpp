@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "absl/base/internal/throw_delegate.h"
-
+#include <functional>
 #include <cstdlib>
 #include <new>
 #include <stdexcept>
